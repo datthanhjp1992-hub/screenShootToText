@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <!-- .NET Framework 4.8 co san tren moi Windows 10/11 => exe nho, copy la chay -->
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <AssemblyName>ScreenOcr</AssemblyName>
+    <RootNamespace>ScreenOcr</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Product>ScreenOcr</Product>
+    <Description>Offline screen OCR (Windows.Media.Ocr)</Description>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Cho phep goi Windows Runtime API (Windows.Media.Ocr) tu .NET Framework -->
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.3233" />
+    <!-- Cho phep build net48 ca tren may khong cai Targeting Pack -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

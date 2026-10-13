@@ -1,0 +1,60 @@
+name: Build ScreenOcr
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]        # push tag v1.0.0, v1.0.1... => tạo Release kèm file zip
+  pull_request:
+  workflow_dispatch:      # cho phép bấm "Run workflow" thủ công trên GitHub
+
+permissions:
+  contents: write         # cần để tạo Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          if ("${{ github.ref }}" -like "refs/tags/v*") {
+            $v = "${{ github.ref_name }}".TrimStart('v')
+          } else {
+            $v = "1.0.0"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build (Release)
+        run: dotnet build ScreenOcr.csproj -c Release -p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item README.md bin/Release/net48/ -Force
+          Compress-Archive -Path "bin/Release/net48/*" -DestinationPath "dist/ScreenOcr-${{ steps.ver.outputs.version }}.zip" -Force
+          Get-ChildItem bin/Release/net48
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenOcr-${{ steps.ver.outputs.version }}
+          path: bin/Release/net48/
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
