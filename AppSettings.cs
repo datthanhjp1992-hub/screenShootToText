@@ -12,8 +12,10 @@ namespace ScreenOcr
     /// </summary>
     public sealed class AppSettings
     {
-        public string LanguageTag = "en-US";     // hoặc "hybrid" = kết hợp en + ja
+        public string LanguageTag = "hybrid";    // "hybrid" = kết hợp en + ja (nếu máy chỉ có 1 gói thì dùng gói đó)
         public int Scale = 2;                    // phóng to ảnh trước khi OCR
+        public bool AutoScale = true;            // chữ còn nhỏ thì tự phóng to thêm và OCR lại
+        public bool CleanBackground = true;      // bỏ nền highlight + ký hiệu khoảng trắng mờ, tăng tương phản
         public bool StripLineNumbers = true;     // bỏ số dòng của Eclipse
         public bool KeepIndent = true;           // dựng lại thụt lề từ vị trí chữ
         public bool SnapIndent = true;           // làm tròn thụt lề theo bội số TabSize
@@ -57,6 +59,8 @@ namespace ScreenOcr
 
                 s.LanguageTag = Str(d, nameof(LanguageTag), s.LanguageTag);
                 s.Scale = Clamp(Int(d, nameof(Scale), s.Scale), 1, 4);
+                s.AutoScale = Bool(d, nameof(AutoScale), s.AutoScale);
+                s.CleanBackground = Bool(d, nameof(CleanBackground), s.CleanBackground);
                 s.StripLineNumbers = Bool(d, nameof(StripLineNumbers), s.StripLineNumbers);
                 s.KeepIndent = Bool(d, nameof(KeepIndent), s.KeepIndent);
                 s.SnapIndent = Bool(d, nameof(SnapIndent), s.SnapIndent);
@@ -89,6 +93,8 @@ namespace ScreenOcr
             sb.AppendLine("; ScreenOcr settings");
             sb.AppendLine($"{nameof(LanguageTag)}={LanguageTag}");
             sb.AppendLine($"{nameof(Scale)}={Scale}");
+            sb.AppendLine($"{nameof(AutoScale)}={AutoScale}");
+            sb.AppendLine($"{nameof(CleanBackground)}={CleanBackground}");
             sb.AppendLine($"{nameof(StripLineNumbers)}={StripLineNumbers}");
             sb.AppendLine($"{nameof(KeepIndent)}={KeepIndent}");
             sb.AppendLine($"{nameof(SnapIndent)}={SnapIndent}");

@@ -118,6 +118,15 @@ namespace ScreenOcr.Tests
             Assert.Equal("int x = 1O0:", TextLayout.Build(lines, Opt(fix: false)));
         }
 
+        [Fact]
+        public void MeasuresLineHeightAndCharCount()
+        {
+            var lines = new[] { Line("abc de", 0), Line("fgh", 1), new List<WordBox>() };
+            Assert.Equal(LineH, TextLayout.MedianLineHeight(lines));
+            Assert.Equal(8, TextLayout.CharCount(lines));
+            Assert.Equal(0, TextLayout.MedianLineHeight(new List<List<WordBox>>()));
+        }
+
         // ---------- MergeHybrid ----------
 
         [Fact]

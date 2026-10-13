@@ -43,7 +43,7 @@ namespace ScreenOcr
         private FlowLayoutPanel _options;
         private ComboBox _cboLang;
         private NumericUpDown _numScale;
-        private CheckBox _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkFixCode, _chkInvert,
+        private CheckBox _chkAutoScale, _chkClean, _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkFixCode, _chkInvert,
                          _chkAutoOcr, _chkAutoCopy, _chkQuick, _chkWatchClip, _chkStitch;
         private TextBox _txtHotkey, _txtRepeatHotkey;
         private StatusStrip _statusStrip;
@@ -168,6 +168,8 @@ namespace ScreenOcr
             };
             _cboLang = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 170 };
             _numScale = new NumericUpDown { Minimum = 1, Maximum = 4, Width = 45 };
+            _chkAutoScale = Chk("Tự phóng to", "Chữ nhỏ thì tự phóng to thêm (tối đa ×6) và OCR lại — chính xác hơn nhiều với font Eclipse mặc định");
+            _chkClean = Chk("Làm sạch nền", "Bỏ nền highlight dòng hiện tại và ký hiệu khoảng trắng mờ (^ » ↵) của Eclipse, tăng tương phản chữ");
             _chkStripNum = Chk("Bỏ số dòng", "Bỏ số dòng ở lề trái (Eclipse: Show Line Numbers)");
             _chkIndent = Chk("Giữ thụt lề", "Dựng lại thụt lề từ vị trí chữ trên ảnh");
             _chkTabs = Chk("Thụt lề bằng Tab", "Dùng ký tự Tab (4 cột) thay vì dấu cách");
@@ -190,7 +192,7 @@ namespace ScreenOcr
 
             _options.Controls.AddRange(new Control[]
             {
-                Lbl("Ngôn ngữ:"), _cboLang, Lbl("Phóng to ×"), _numScale,
+                Lbl("Ngôn ngữ:"), _cboLang, Lbl("Phóng to ×"), _numScale, _chkAutoScale, _chkClean,
                 _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkFixCode, _chkInvert,
                 _chkAutoOcr, _chkAutoCopy, _chkQuick, _chkWatchClip, _chkStitch,
                 Lbl("Hotkey:"), _txtHotkey, Lbl("Chụp lại:"), _txtRepeatHotkey,
@@ -297,6 +299,8 @@ namespace ScreenOcr
                 if (idx >= 0) _cboLang.SelectedIndex = idx;
 
                 _numScale.Value = Math.Max(1, Math.Min(4, _s.Scale));
+                _chkAutoScale.Checked = _s.AutoScale;
+                _chkClean.Checked = _s.CleanBackground;
                 _chkStripNum.Checked = _s.StripLineNumbers;
                 _chkIndent.Checked = _s.KeepIndent;
                 _chkTabs.Checked = _s.UseTabs;
@@ -319,6 +323,8 @@ namespace ScreenOcr
             if (_loadingOptions) return;
             if (_cboLang.SelectedItem is LangItem li) _s.LanguageTag = li.Tag;
             _s.Scale = (int)_numScale.Value;
+            _s.AutoScale = _chkAutoScale.Checked;
+            _s.CleanBackground = _chkClean.Checked;
             _s.StripLineNumbers = _chkStripNum.Checked;
             _s.KeepIndent = _chkIndent.Checked;
             _s.UseTabs = _chkTabs.Checked;

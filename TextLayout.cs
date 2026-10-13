@@ -191,6 +191,18 @@ namespace ScreenOcr
             return new string('\t', cols / opt.TabSize) + new string(' ', cols % opt.TabSize);
         }
 
+        /// <summary>Chiều cao trung vị của các dòng OCR (px), 0 nếu không có chữ.</summary>
+        public static double MedianLineHeight(IEnumerable<IEnumerable<WordBox>> lines)
+        {
+            var hs = lines.Select(l => l.ToList()).Where(l => l.Count > 0)
+                          .Select(l => l.Max(w => w.B) - l.Min(w => w.Y)).ToList();
+            return Median(hs);
+        }
+
+        /// <summary>Tổng số ký tự nhận dạng được (để so sánh 2 lần OCR).</summary>
+        public static int CharCount(IEnumerable<IEnumerable<WordBox>> lines) =>
+            lines.Sum(l => l.Sum(w => w.Text?.Length ?? 0));
+
         // ---------- OCR kết hợp en + ja ----------
 
         /// <summary>

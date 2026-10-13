@@ -68,13 +68,18 @@ Cài đặt được lưu vào `ScreenOcr.ini` cạnh file exe (nếu thư mục
 - **Ngôn ngữ:** code có comment tiếng Nhật → chọn `English + 日本語 (hybrid)` (cần cài cả 2 gói OCR):
   app chạy cả 2 engine rồi ghép lại — chữ Nhật lấy từ engine `ja`, code/ký hiệu `{ } ; ( )` lấy từ engine `en`.
   Code thuần tiếng Anh → `English (en-US)` (nhanh hơn).
-- **Phóng to font Eclipse** (Ctrl + `=`) trước khi chụp; chữ càng to OCR càng chuẩn. Tuỳ chọn *Phóng to ×2–3* trong app cũng giúp với chữ nhỏ.
+- **Phóng to font Eclipse** (Ctrl + `=`) trước khi chụp; chữ càng to OCR càng chuẩn. Tuỳ chọn *Tự phóng to* (bật sẵn)
+  sẽ đo cỡ chữ sau lần OCR đầu, nếu chữ còn nhỏ thì phóng to thêm (tối đa ×6) và OCR lại.
+- **Tắt "Show Whitespace Characters"** của Eclipse (nút ¶ trên thanh công cụ) khi chụp: các ký hiệu `^ » ↵` làm OCR mất dấu `;` `)`.
+  Tuỳ chọn *Làm sạch nền* (bật sẵn) đã tự xoá phần lớn ký hiệu mờ này và nền highlight dòng hiện tại.
 - Chụp **gọn vùng code**, tránh dính thanh cuộn, icon breakpoint, dấu gập code (+/−).
 - *Bỏ số dòng* chỉ kích hoạt khi đa số dòng bắt đầu bằng số, nên để bật cũng an toàn.
 - *Thụt lề* được làm tròn theo bội số 4 cột (cấu hình `TabSize` trong file ini) vì Eclipse thụt lề theo tab.
 - Eclipse **Dark theme**: để bật *Tự đảo màu nền tối*.
-- Các lỗi OCR hay gặp với code: `l` ↔ `1` ↔ `|`, `O` ↔ `0`, `;` ↔ `:`. Tuỳ chọn *Sửa lỗi OCR code* tự sửa các trường hợp chắc chắn
-  (`1O0` → `100`, `int x = 0:` → `int x = 0;`), không đụng vào chuỗi, comment, `case x:`, label, code Python.
+- Các lỗi OCR hay gặp với code: `l` ↔ `1` ↔ `|`, `O` ↔ `0`, `;` ↔ `:`. Tuỳ chọn *Sửa lỗi OCR code* tự sửa các trường hợp chắc chắn:
+  `1O0` → `100`, `equa1s` → `equals`, `StringUti1` → `StringUtil`, `.DOCUMENT TYPE Ie3` → `.DOCUMENT_TYPE_103`,
+  `foo() .bar()` → `foo().bar()`, `int x = 0:` → `int x = 0;`, thêm `;` / `)` bị mất cuối câu lệnh.
+  Không đụng vào chuỗi, comment, `case x:`, label, code Python.
   Vẫn nên xem lại nhanh trước khi dùng.
 
 ## 5. Cấu trúc mã nguồn
