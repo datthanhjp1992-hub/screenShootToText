@@ -34,6 +34,9 @@ jobs:
           }
           "version=$v" >> $env:GITHUB_OUTPUT
 
+      - name: Unit tests
+        run: dotnet test tests/ScreenOcr.Tests/ScreenOcr.Tests.csproj -c Release
+
       - name: Build (Release)
         run: dotnet build ScreenOcr.csproj -c Release -p:Version=${{ steps.ver.outputs.version }}
 

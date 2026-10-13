@@ -12,7 +12,7 @@ namespace ScreenOcr
     /// </summary>
     public sealed class AppSettings
     {
-        public string LanguageTag = "en-US";
+        public string LanguageTag = "en-US";     // hoặc "hybrid" = kết hợp en + ja
         public int Scale = 2;                    // phóng to ảnh trước khi OCR
         public bool StripLineNumbers = true;     // bỏ số dòng của Eclipse
         public bool KeepIndent = true;           // dựng lại thụt lề từ vị trí chữ
@@ -21,10 +21,16 @@ namespace ScreenOcr
         public int TabSize = 4;
         public bool NormalizeWidth = true;       // Ｆｕｌｌ-width -> half-width, “ ” -> "
         public bool AutoInvertDark = true;       // tự đảo màu khi nền tối (Eclipse dark theme)
+        public bool FixCodeChars = true;         // sửa lỗi OCR hay gặp với code: "1O0" -> "100", ":" -> ";"
+        public bool QuickCapture = false;        // chụp bằng hotkey: OCR + copy luôn, không mở cửa sổ
+        public bool WatchClipboard = false;      // tự OCR khi clipboard có ảnh mới (VD: Win+Shift+S)
+        public bool StitchMulti = false;         // chọn nhiều ảnh: ghép liền, bỏ dòng trùng ở chỗ nối
         public bool AutoOcrAfterCapture = true;
         public bool AutoCopyAfterOcr = true;
         public bool AlwaysOnTop = true;
         public string Hotkey = "Ctrl+Shift+Q";
+        public string RepeatHotkey = "Ctrl+Alt+Q"; // chụp lại đúng vùng lần trước
+        public string LastRegion = "";             // "x,y,w,h" theo toạ độ màn hình ảo
         public string LastSaveDir = "";
 
         private static readonly string ExeDirPath =
@@ -58,10 +64,16 @@ namespace ScreenOcr
                 s.TabSize = Clamp(Int(d, nameof(TabSize), s.TabSize), 1, 16);
                 s.NormalizeWidth = Bool(d, nameof(NormalizeWidth), s.NormalizeWidth);
                 s.AutoInvertDark = Bool(d, nameof(AutoInvertDark), s.AutoInvertDark);
+                s.FixCodeChars = Bool(d, nameof(FixCodeChars), s.FixCodeChars);
+                s.QuickCapture = Bool(d, nameof(QuickCapture), s.QuickCapture);
+                s.WatchClipboard = Bool(d, nameof(WatchClipboard), s.WatchClipboard);
+                s.StitchMulti = Bool(d, nameof(StitchMulti), s.StitchMulti);
                 s.AutoOcrAfterCapture = Bool(d, nameof(AutoOcrAfterCapture), s.AutoOcrAfterCapture);
                 s.AutoCopyAfterOcr = Bool(d, nameof(AutoCopyAfterOcr), s.AutoCopyAfterOcr);
                 s.AlwaysOnTop = Bool(d, nameof(AlwaysOnTop), s.AlwaysOnTop);
                 s.Hotkey = Str(d, nameof(Hotkey), s.Hotkey);
+                s.RepeatHotkey = Str(d, nameof(RepeatHotkey), s.RepeatHotkey);
+                s.LastRegion = Str(d, nameof(LastRegion), s.LastRegion);
                 s.LastSaveDir = Str(d, nameof(LastSaveDir), s.LastSaveDir);
             }
             catch
@@ -84,10 +96,16 @@ namespace ScreenOcr
             sb.AppendLine($"{nameof(TabSize)}={TabSize}");
             sb.AppendLine($"{nameof(NormalizeWidth)}={NormalizeWidth}");
             sb.AppendLine($"{nameof(AutoInvertDark)}={AutoInvertDark}");
+            sb.AppendLine($"{nameof(FixCodeChars)}={FixCodeChars}");
+            sb.AppendLine($"{nameof(QuickCapture)}={QuickCapture}");
+            sb.AppendLine($"{nameof(WatchClipboard)}={WatchClipboard}");
+            sb.AppendLine($"{nameof(StitchMulti)}={StitchMulti}");
             sb.AppendLine($"{nameof(AutoOcrAfterCapture)}={AutoOcrAfterCapture}");
             sb.AppendLine($"{nameof(AutoCopyAfterOcr)}={AutoCopyAfterOcr}");
             sb.AppendLine($"{nameof(AlwaysOnTop)}={AlwaysOnTop}");
             sb.AppendLine($"{nameof(Hotkey)}={Hotkey}");
+            sb.AppendLine($"{nameof(RepeatHotkey)}={RepeatHotkey}");
+            sb.AppendLine($"{nameof(LastRegion)}={LastRegion}");
             sb.AppendLine($"{nameof(LastSaveDir)}={LastSaveDir}");
 
             try

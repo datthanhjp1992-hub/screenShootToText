@@ -24,6 +24,7 @@ namespace ScreenOcr
     public sealed class MainForm : Form
     {
         private const int HotkeyId = 0x5C01;
+        private const int RepeatHotkeyId = 0x5C02;
         private static readonly string[] ImageExts = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff" };
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
@@ -32,7 +33,7 @@ namespace ScreenOcr
 
         // UI
         private ToolStrip _tool;
-        private ToolStripButton _btnCapture, _btnOpen, _btnPaste, _btnOcrSel, _btnOcrAll,
+        private ToolStripButton _btnCapture, _btnRepeat, _btnOpen, _btnPaste, _btnOcrSel, _btnOcrAll,
                                 _btnCopy, _btnSave, _btnExport, _btnRemove, _btnClear, _btnTop;
         private SplitContainer _splitMain, _splitRight;
         private ListView _list;
@@ -42,8 +43,9 @@ namespace ScreenOcr
         private FlowLayoutPanel _options;
         private ComboBox _cboLang;
         private NumericUpDown _numScale;
-        private CheckBox _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkInvert, _chkAutoOcr, _chkAutoCopy;
-        private TextBox _txtHotkey;
+        private CheckBox _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkFixCode, _chkInvert,
+                         _chkAutoOcr, _chkAutoCopy, _chkQuick, _chkWatchClip, _chkStitch;
+        private TextBox _txtHotkey, _txtRepeatHotkey;
         private StatusStrip _statusStrip;
         private ToolStripStatusLabel _status;
         private ToolStripProgressBar _progress;
@@ -52,6 +54,7 @@ namespace ScreenOcr
         // state
         private bool _exiting, _busy, _capturing, _suppressTextEvent, _balloonShown, _loadingOptions;
         private int _captureNo;
+        private DateTime _lastClipboardOcr = DateTime.MinValue;
 
         public MainForm()
         {
@@ -81,7 +84,8 @@ namespace ScreenOcr
         private void BuildUi()
         {
             _tool = new ToolStrip { GripStyle = ToolStripGripStyle.Hidden, Padding = new Padding(4, 2, 4, 2) };
-            _btnCapture = Btn("📷 Chụp vùng", "Chụp một vùng màn hình", (s, e) => StartCapture());
+            _btnCapture = Btn("📷 Chụp vùng", "Chụp một vùng màn hình", (s, e) => StartCapture(false));
+            _btnRepeat = Btn("🔁 Chụp lại vùng", "Chụp lại đúng vùng lần trước (tiện khi cuộn code rồi chụp tiếp)", (s, e) => StartCapture(true));
             _btnOpen = Btn("📂 Mở ảnh…", "Chọn một hoặc nhiều file ảnh (Ctrl+O)", (s, e) => OpenImages());
             _btnPaste = Btn("📋 Dán ảnh", "Dán ảnh từ clipboard (Ctrl+V)", (s, e) => PasteFromClipboard());
             _btnOcrSel = Btn("▶ OCR ảnh chọn", "Nhận dạng chữ các ảnh đang chọn (F5)", async (s, e) => await OcrItemsAsync(SelectedItems()));
@@ -96,7 +100,7 @@ namespace ScreenOcr
 
             _tool.Items.AddRange(new ToolStripItem[]
             {
-                _btnCapture, _btnOpen, _btnPaste, new ToolStripSeparator(),
+                _btnCapture, _btnRepeat, _btnOpen, _btnPaste, new ToolStripSeparator(),
                 _btnOcrSel, _btnOcrAll, new ToolStripSeparator(),
                 _btnCopy, _btnSave, _btnExport, new ToolStripSeparator(),
                 _btnRemove, _btnClear, new ToolStripSeparator(), _btnTop
@@ -168,20 +172,28 @@ namespace ScreenOcr
             _chkIndent = Chk("Giữ thụt lề", "Dựng lại thụt lề từ vị trí chữ trên ảnh");
             _chkTabs = Chk("Thụt lề bằng Tab", "Dùng ký tự Tab (4 cột) thay vì dấu cách");
             _chkNormalize = Chk("Chuẩn hoá ký tự", "Chuyển ký tự full-width (（），；) và nháy cong về ASCII");
+            _chkFixCode = Chk("Sửa lỗi OCR code", "Sửa số bị đọc nhầm (1O0 → 100) và \":\" cuối câu lệnh → \";\".\nKhông sửa trong chuỗi và comment.");
             _chkInvert = Chk("Tự đảo màu nền tối", "Giúp OCR tốt hơn với Eclipse Dark theme");
             _chkAutoOcr = Chk("Tự OCR sau khi chụp", null);
             _chkAutoCopy = Chk("Tự copy sau OCR", null);
-            _txtHotkey = new TextBox { Width = 120, ReadOnly = true, BackColor = SystemColors.Window, Cursor = Cursors.Hand };
-            _txtHotkey.KeyDown += OnHotkeyBoxKeyDown;
+            _chkQuick = Chk("Chụp nhanh", "Chụp bằng hotkey khi app đang ẩn: OCR + copy luôn, không mở cửa sổ (chỉ hiện thông báo)");
+            _chkWatchClip = Chk("Tự OCR ảnh trong clipboard", "Khi clipboard có ảnh mới (VD: chụp bằng Win+Shift+S) thì tự OCR và copy text");
+            _chkStitch = Chk("Ghép liền nhiều ảnh", "Chọn nhiều ảnh chụp cuộn liên tiếp: ghép thành 1 đoạn, bỏ các dòng trùng ở chỗ nối");
+            _chkStitch.CheckedChanged += (s, e) => RefreshDetail();
+            _txtHotkey = HotkeyBox();
+            _txtRepeatHotkey = HotkeyBox();
             var tip = new ToolTip();
-            tip.SetToolTip(_txtHotkey, "Bấm vào ô rồi nhấn tổ hợp phím mới, VD: Ctrl+Shift+Q");
-            tip.SetToolTip(_cboLang, "en-US: code thuần tiếng Anh (ký hiệu chính xác hơn)\nja: code có comment tiếng Nhật");
+            tip.SetToolTip(_txtHotkey, "Chụp vùng mới. Bấm vào ô rồi nhấn tổ hợp phím mới, VD: Ctrl+Shift+Q");
+            tip.SetToolTip(_txtRepeatHotkey, "Chụp lại đúng vùng lần trước. Bấm vào ô rồi nhấn tổ hợp phím mới");
+            tip.SetToolTip(_cboLang, "English + 日本語: code có comment tiếng Nhật (chính xác nhất, chậm hơn một chút)\n" +
+                                     "en-US: code thuần tiếng Anh\nja: văn bản tiếng Nhật");
 
             _options.Controls.AddRange(new Control[]
             {
                 Lbl("Ngôn ngữ:"), _cboLang, Lbl("Phóng to ×"), _numScale,
-                _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkInvert,
-                _chkAutoOcr, _chkAutoCopy, Lbl("Hotkey:"), _txtHotkey,
+                _chkStripNum, _chkIndent, _chkTabs, _chkNormalize, _chkFixCode, _chkInvert,
+                _chkAutoOcr, _chkAutoCopy, _chkQuick, _chkWatchClip, _chkStitch,
+                Lbl("Hotkey:"), _txtHotkey, Lbl("Chụp lại:"), _txtRepeatHotkey,
             });
 
             _cboLang.SelectedIndexChanged += (s, e) => SaveOptionsFromUi();
@@ -215,6 +227,13 @@ namespace ScreenOcr
             return c;
         }
 
+        private TextBox HotkeyBox()
+        {
+            var t = new TextBox { Width = 110, ReadOnly = true, BackColor = SystemColors.Window, Cursor = Cursors.Hand };
+            t.KeyDown += OnHotkeyBoxKeyDown;
+            return t;
+        }
+
         private static Label Lbl(string text) =>
             new Label { Text = text, AutoSize = true, Margin = new Padding(8, 7, 2, 0) };
 
@@ -222,7 +241,8 @@ namespace ScreenOcr
         {
             var menu = new ContextMenuStrip();
             menu.Items.Add("Mở ScreenOcr", null, (s, e) => ShowMain());
-            menu.Items.Add("Chụp vùng", null, (s, e) => StartCapture());
+            menu.Items.Add("Chụp vùng", null, (s, e) => StartCapture(false));
+            menu.Items.Add("Chụp lại vùng trước", null, (s, e) => StartCapture(true));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("Thoát", null, (s, e) => ExitApp());
 
@@ -248,7 +268,7 @@ namespace ScreenOcr
             if (_cboLang.Items.Count == 0)
                 SetStatus("⚠ Không tìm thấy gói OCR nào. Hãy cài gói OCR tiếng Anh/Nhật trong Windows.", true);
             else
-                SetStatus($"Sẵn sàng — nhấn {_s.Hotkey} ở bất kỳ đâu để chụp vùng màn hình.");
+                SetStatus($"Sẵn sàng — nhấn {_s.Hotkey} ở bất kỳ đâu để chụp vùng màn hình, {_s.RepeatHotkey} để chụp lại vùng trước.");
         }
 
         // =====================================================================
@@ -281,10 +301,15 @@ namespace ScreenOcr
                 _chkIndent.Checked = _s.KeepIndent;
                 _chkTabs.Checked = _s.UseTabs;
                 _chkNormalize.Checked = _s.NormalizeWidth;
+                _chkFixCode.Checked = _s.FixCodeChars;
                 _chkInvert.Checked = _s.AutoInvertDark;
                 _chkAutoOcr.Checked = _s.AutoOcrAfterCapture;
                 _chkAutoCopy.Checked = _s.AutoCopyAfterOcr;
+                _chkQuick.Checked = _s.QuickCapture;
+                _chkWatchClip.Checked = _s.WatchClipboard;
+                _chkStitch.Checked = _s.StitchMulti;
                 _txtHotkey.Text = _s.Hotkey;
+                _txtRepeatHotkey.Text = _s.RepeatHotkey;
             }
             finally { _loadingOptions = false; }
         }
@@ -298,9 +323,13 @@ namespace ScreenOcr
             _s.KeepIndent = _chkIndent.Checked;
             _s.UseTabs = _chkTabs.Checked;
             _s.NormalizeWidth = _chkNormalize.Checked;
+            _s.FixCodeChars = _chkFixCode.Checked;
             _s.AutoInvertDark = _chkInvert.Checked;
             _s.AutoOcrAfterCapture = _chkAutoOcr.Checked;
             _s.AutoCopyAfterOcr = _chkAutoCopy.Checked;
+            _s.QuickCapture = _chkQuick.Checked;
+            _s.WatchClipboard = _chkWatchClip.Checked;
+            _s.StitchMulti = _chkStitch.Checked;
             _s.Save();
         }
 
@@ -317,24 +346,28 @@ namespace ScreenOcr
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            RegisterGlobalHotkey(_s.Hotkey, false);
+            RegisterGlobalHotkey(HotkeyId, _s.Hotkey, false);
+            RegisterGlobalHotkey(RepeatHotkeyId, _s.RepeatHotkey, false);
+            NativeMethods.AddClipboardFormatListener(Handle);
         }
 
         protected override void OnHandleDestroyed(EventArgs e)
         {
             NativeMethods.UnregisterHotKey(Handle, HotkeyId);
+            NativeMethods.UnregisterHotKey(Handle, RepeatHotkeyId);
+            NativeMethods.RemoveClipboardFormatListener(Handle);
             base.OnHandleDestroyed(e);
         }
 
-        private bool RegisterGlobalHotkey(string text, bool notify)
+        private bool RegisterGlobalHotkey(int id, string text, bool notify)
         {
-            NativeMethods.UnregisterHotKey(Handle, HotkeyId);
+            NativeMethods.UnregisterHotKey(Handle, id);
             if (!HotkeyParser.TryParse(text, out var mods, out var key))
             {
                 SetStatus($"Hotkey không hợp lệ: {text}", true);
                 return false;
             }
-            if (!NativeMethods.RegisterHotKey(Handle, HotkeyId, mods | NativeMethods.MOD_NOREPEAT, (uint)key))
+            if (!NativeMethods.RegisterHotKey(Handle, id, mods | NativeMethods.MOD_NOREPEAT, (uint)key))
             {
                 SetStatus($"⚠ Hotkey {text} đang bị ứng dụng khác sử dụng. Hãy chọn tổ hợp khác.", true);
                 return false;
@@ -354,25 +387,43 @@ namespace ScreenOcr
                 return;
             }
 
+            bool repeat = sender == _txtRepeatHotkey;
+            int id = repeat ? RepeatHotkeyId : HotkeyId;
+            string current = repeat ? _s.RepeatHotkey : _s.Hotkey;
+            string other = repeat ? _s.Hotkey : _s.RepeatHotkey;
+
             var text = HotkeyParser.Format(e.Modifiers, e.KeyCode);
-            if (RegisterGlobalHotkey(text, true))
+            if (text.Equals(other, StringComparison.OrdinalIgnoreCase))
             {
-                _txtHotkey.Text = text;
-                _s.Hotkey = text;
+                SetStatus($"Hotkey {text} đang dùng cho chức năng khác.", true);
+                return;
+            }
+            if (RegisterGlobalHotkey(id, text, true))
+            {
+                ((TextBox)sender).Text = text;
+                if (repeat) _s.RepeatHotkey = text; else _s.Hotkey = text;
                 _s.Save();
             }
             else
             {
-                RegisterGlobalHotkey(_s.Hotkey, false); // khôi phục hotkey cũ
+                RegisterGlobalHotkey(id, current, false); // khôi phục hotkey cũ
             }
         }
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == NativeMethods.WM_HOTKEY && m.WParam.ToInt32() == HotkeyId)
+            if (m.Msg == NativeMethods.WM_HOTKEY)
             {
-                StartCapture();
-                return;
+                int id = m.WParam.ToInt32();
+                if (id == HotkeyId || id == RepeatHotkeyId)
+                {
+                    StartCapture(id == RepeatHotkeyId);
+                    return;
+                }
+            }
+            else if (m.Msg == NativeMethods.WM_CLIPBOARDUPDATE)
+            {
+                OnClipboardUpdate();
             }
             base.WndProc(ref m);
         }
@@ -380,31 +431,54 @@ namespace ScreenOcr
         // =====================================================================
         //  Chụp màn hình
         // =====================================================================
-        private async void StartCapture()
+        /// <param name="repeat">true = chụp lại đúng vùng lần trước (không cần kéo chọn).</param>
+        private async void StartCapture(bool repeat)
         {
             if (_capturing || _busy) return;
             _capturing = true;
+            bool wasVisible = Visible && WindowState != FormWindowState.Minimized;
             try
             {
-                bool wasVisible = Visible && WindowState != FormWindowState.Minimized;
+                var area = Rectangle.Empty;
+                if (repeat)
+                {
+                    area = Rectangle.Intersect(ParseRect(_s.LastRegion), SystemInformation.VirtualScreen);
+                    if (area.Width < 5 || area.Height < 5) repeat = false; // chưa có vùng trước -> chọn vùng mới
+                }
+
                 if (wasVisible) Hide();
                 await Task.Delay(wasVisible ? 220 : 60); // chờ cửa sổ biến mất hẳn
 
                 Bitmap region = null;
-                using (var full = RegionSelectForm.CaptureVirtualScreen())
-                using (var sel = new RegionSelectForm(full))
+                if (repeat)
                 {
-                    if (sel.ShowDialog() == DialogResult.OK) region = sel.Result;
+                    region = RegionSelectForm.CaptureArea(area);
+                }
+                else
+                {
+                    using (var full = RegionSelectForm.CaptureVirtualScreen())
+                    using (var sel = new RegionSelectForm(full))
+                    {
+                        if (sel.ShowDialog() == DialogResult.OK)
+                        {
+                            region = sel.Result;
+                            var r = sel.SelectedRegion;
+                            _s.LastRegion = $"{r.X},{r.Y},{r.Width},{r.Height}";
+                            _s.Save();
+                        }
+                    }
                 }
 
-                ShowMain();
+                // Chụp nhanh: app đang ẩn thì giữ nguyên ẩn, chỉ OCR + copy + hiện thông báo
+                bool quick = _s.QuickCapture && !wasVisible;
+                if (!quick) ShowMain();
                 if (region == null) return;
 
                 var item = AddImage(region, $"capture_{DateTime.Now:yyyyMMdd_HHmmss}_{++_captureNo}");
                 SelectOnly(item);
 
-                if (_s.AutoOcrAfterCapture)
-                    await OcrItemsAsync(new List<ImageItem> { item });
+                if (quick || _s.AutoOcrAfterCapture)
+                    await OcrItemsAsync(new List<ImageItem> { item }, quick);
             }
             catch (Exception ex)
             {
@@ -412,6 +486,42 @@ namespace ScreenOcr
                 SetStatus("Lỗi khi chụp: " + ex.Message, true);
             }
             finally { _capturing = false; }
+        }
+
+        private static Rectangle ParseRect(string s)
+        {
+            var p = (s ?? "").Split(',');
+            if (p.Length == 4 && int.TryParse(p[0], out var x) && int.TryParse(p[1], out var y) &&
+                int.TryParse(p[2], out var w) && int.TryParse(p[3], out var h))
+                return new Rectangle(x, y, w, h);
+            return Rectangle.Empty;
+        }
+
+        // =====================================================================
+        //  Theo dõi clipboard (VD: chụp bằng Win+Shift+S rồi tự OCR)
+        // =====================================================================
+        private async void OnClipboardUpdate()
+        {
+            if (!_s.WatchClipboard || _busy || _capturing) return;
+            // Snipping Tool có thể ghi clipboard nhiều lần liên tiếp -> bỏ qua các lần sát nhau
+            if ((DateTime.Now - _lastClipboardOcr).TotalMilliseconds < 1000) return;
+
+            try
+            {
+                await Task.Delay(150); // chờ ứng dụng nguồn ghi xong mọi định dạng
+                if (!Clipboard.ContainsImage()) return; // text do chính app copy cũng đi qua đây
+                _lastClipboardOcr = DateTime.Now;
+
+                ImageItem item;
+                using (var img = Clipboard.GetImage())
+                {
+                    if (img == null) return;
+                    item = AddImage(new Bitmap(img), $"clipboard_{DateTime.Now:yyyyMMdd_HHmmss}");
+                }
+                SelectOnly(item);
+                await OcrItemsAsync(new List<ImageItem> { item }, true);
+            }
+            catch (Exception ex) { SetStatus("Không đọc được clipboard: " + ex.Message, true); }
         }
 
         // =====================================================================
@@ -536,7 +646,8 @@ namespace ScreenOcr
         // =====================================================================
         //  OCR
         // =====================================================================
-        private async Task OcrItemsAsync(List<ImageItem> items)
+        /// <param name="forceCopy">true = luôn copy kết quả (chụp nhanh / OCR từ clipboard).</param>
+        private async Task OcrItemsAsync(List<ImageItem> items, bool forceCopy = false)
         {
             if (_busy) return;
             if (items.Count == 0) { SetStatus("Chưa có ảnh nào được chọn.", true); return; }
@@ -570,14 +681,22 @@ namespace ScreenOcr
 
             RefreshDetail();
 
+            bool copied = false;
+            int lines = 0;
+            if ((forceCopy || _s.AutoCopyAfterOcr) && ok > 0)
+            {
+                var text = BuildText(items.Where(x => x.Done).ToList());
+                lines = string.IsNullOrEmpty(text) ? 0 : text.Split('\n').Length;
+                copied = CopyText(text, true);
+            }
+
             var failed = items.Where(x => x.Error != null).ToList();
             if (failed.Count > 0)
-                SetStatus($"Xong {ok}/{items.Count} ảnh. Lỗi: {failed[0].Error}", true);
+                Notify($"Xong {ok}/{items.Count} ảnh. Lỗi: {failed[0].Error}", true);
+            else if (copied)
+                Notify($"Đã OCR {ok} ảnh và copy {lines} dòng vào clipboard ✔");
             else
-                SetStatus($"Đã OCR xong {ok} ảnh.");
-
-            if (_s.AutoCopyAfterOcr && ok > 0)
-                CopyText(BuildText(items.Where(x => x.Done).ToList()), true);
+                Notify(ok > 0 && lines == 0 && forceCopy ? "Không nhận dạng được chữ nào." : $"Đã OCR xong {ok} ảnh.");
         }
 
         private void SetBusy(bool busy, int total)
@@ -607,9 +726,10 @@ namespace ScreenOcr
             item.ListItem.EnsureVisible();
         }
 
-        private static string BuildText(List<ImageItem> items)
+        private string BuildText(List<ImageItem> items)
         {
             if (items.Count == 1) return items[0].Text ?? "";
+            if (_s.StitchMulti) return TextLayout.Stitch(items.Select(i => i.Text));
             var sb = new StringBuilder();
             foreach (var it in items)
             {
@@ -642,15 +762,17 @@ namespace ScreenOcr
             finally { _suppressTextEvent = false; }
         }
 
-        private void CopyText(string text, bool auto)
+        /// <param name="auto">true = gọi sau OCR: người gọi tự báo kết quả.</param>
+        private bool CopyText(string text, bool auto)
         {
-            if (string.IsNullOrEmpty(text)) { if (!auto) SetStatus("Không có text để copy.", true); return; }
+            if (string.IsNullOrEmpty(text)) { if (!auto) SetStatus("Không có text để copy.", true); return false; }
             try
             {
                 Clipboard.SetDataObject(text, true, 10, 100);
-                SetStatus(auto ? "Đã OCR và copy vào clipboard ✔" : "Đã copy vào clipboard ✔");
+                if (!auto) SetStatus("Đã copy vào clipboard ✔");
+                return true;
             }
-            catch (Exception ex) { SetStatus("Không copy được: " + ex.Message, true); }
+            catch (Exception ex) { SetStatus("Không copy được: " + ex.Message, true); return false; }
         }
 
         private void SaveToFile()
@@ -788,6 +910,14 @@ namespace ScreenOcr
                 foreach (var it in AllItems()) it.Image.Dispose();
             }
             base.Dispose(disposing);
+        }
+
+        /// <summary>Hiện kết quả ở thanh trạng thái; nếu cửa sổ đang ẩn thì hiện thêm thông báo ở khay.</summary>
+        private void Notify(string text, bool warn = false)
+        {
+            SetStatus(text, warn);
+            if (!Visible)
+                _tray.ShowBalloonTip(2500, "ScreenOcr", text, warn ? ToolTipIcon.Warning : ToolTipIcon.Info);
         }
 
         private void SetStatus(string text, bool warn = false)

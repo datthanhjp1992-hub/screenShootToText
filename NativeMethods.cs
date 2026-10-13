@@ -9,6 +9,7 @@ namespace ScreenOcr
     {
         public const int WM_HOTKEY = 0x0312;
         public const int WM_DPICHANGED = 0x02E0;
+        public const int WM_CLIPBOARDUPDATE = 0x031D;
 
         public const uint MOD_ALT = 0x0001;
         public const uint MOD_CONTROL = 0x0002;
@@ -21,6 +22,12 @@ namespace ScreenOcr
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool AddClipboardFormatListener(IntPtr hwnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
     }
 
     /// <summary>Chuyển đổi chuỗi hotkey "Ctrl+Shift+Q" &lt;-&gt; modifiers + Keys.</summary>

@@ -19,12 +19,16 @@ namespace ScreenOcr
 
         public Bitmap Result { get; private set; }
 
-        public static Bitmap CaptureVirtualScreen()
+        /// <summary>Vùng đã chọn, theo toạ độ màn hình ảo (dùng cho "Chụp lại vùng trước").</summary>
+        public Rectangle SelectedRegion { get; private set; }
+
+        public static Bitmap CaptureVirtualScreen() => CaptureArea(SystemInformation.VirtualScreen);
+
+        public static Bitmap CaptureArea(Rectangle area)
         {
-            var vs = SystemInformation.VirtualScreen;
-            var bmp = new Bitmap(vs.Width, vs.Height, PixelFormat.Format32bppArgb);
+            var bmp = new Bitmap(area.Width, area.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
-                g.CopyFromScreen(vs.Left, vs.Top, 0, 0, vs.Size, CopyPixelOperation.SourceCopy);
+                g.CopyFromScreen(area.Left, area.Top, 0, 0, area.Size, CopyPixelOperation.SourceCopy);
             return bmp;
         }
 
@@ -135,6 +139,8 @@ namespace ScreenOcr
             }
 
             Result = _screen.Clone(_sel, PixelFormat.Format32bppArgb);
+            var vs = SystemInformation.VirtualScreen;
+            SelectedRegion = new Rectangle(_sel.X + vs.Left, _sel.Y + vs.Top, _sel.Width, _sel.Height);
             DialogResult = DialogResult.OK;
             Close();
         }

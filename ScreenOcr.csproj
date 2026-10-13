@@ -19,6 +19,8 @@
     <Prefer32Bit>false</Prefer32Bit>
     <DebugType>none</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Project test nằm trong thư mục tests/, không build chung vào exe -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

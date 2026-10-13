@@ -37,8 +37,9 @@ namespace ScreenOcr
         }
 
         private static readonly Regex PureNumber = new Regex(@"^\d+$", RegexOptions.Compiled);
-        // số dòng bị dính vào token đầu: "12public" -> "public" (identifier không bắt đầu bằng số)
-        private static readonly Regex FusedNumber = new Regex(@"^\d+(?=[^\d.,xXeEbBlLfFdD_])", RegexOptions.Compiled);
+        // số dòng bị dính vào token đầu: "12public" -> "public", "12for" -> "for".
+        // Chỉ chạy khi đã xác định ảnh có cột số dòng, nên chỉ chừa lại số thập phân "12.5" / "1,000".
+        private static readonly Regex FusedNumber = new Regex(@"^\d+(?=[^\d.,])", RegexOptions.Compiled);
 
         public static string Build(IEnumerable<IEnumerable<WordBox>> ocrLines, AppSettings opt)
         {
@@ -109,7 +110,8 @@ namespace ScreenOcr
             {
                 var diffs = new List<double>();
                 for (int i = 1; i < rows.Count; i++) diffs.Add(rows[i].Cy - rows[i - 1].Cy);
-                pitch = Median(diffs.Where(d => d > 0).ToList());
+                // trung vị dưới: khi có nhiều dòng trống (khoảng cách gấp đôi) vẫn ra đúng khoảng cách 1 dòng
+                pitch = LowerMedian(diffs.Where(d => d > 0).ToList());
             }
 
             // 7. Ghép text
@@ -156,6 +158,7 @@ namespace ScreenOcr
 
             var text = sb.ToString();
             if (opt.NormalizeWidth) text = NormalizeChars(text);
+            if (opt.FixCodeChars) text = CodeFixer.Fix(text);
 
             // bỏ khoảng trắng cuối dòng và dòng trống ở cuối
             var lines = text.Split(new[] { "\r\n" }, StringSplitOptions.None).Select(l => l.TrimEnd());
@@ -188,8 +191,93 @@ namespace ScreenOcr
             return new string('\t', cols / opt.TabSize) + new string(' ', cols % opt.TabSize);
         }
 
+        // ---------- OCR kết hợp en + ja ----------
+
+        /// <summary>
+        /// Ghép kết quả của 2 engine trên cùng một ảnh:
+        ///  - chữ Nhật (CJK/kana) lấy từ engine ja
+        ///  - phần còn lại (code, ký hiệu) lấy từ engine en, bỏ các từ "rác" en đọc đè lên chữ Nhật
+        ///  - từ ASCII mà en bỏ sót thì lấy bù từ ja
+        /// Kết quả vẫn là danh sách dòng; Build() sẽ gộp các dòng nằm trên cùng một hàng.
+        /// </summary>
+        public static List<List<WordBox>> MergeHybrid(
+            IEnumerable<IEnumerable<WordBox>> enLines, IEnumerable<IEnumerable<WordBox>> jaLines)
+        {
+            var ja = jaLines.Select(l => l.Where(w => !string.IsNullOrEmpty(w.Text)).ToList()).ToList();
+            var cjkWords = ja.SelectMany(l => l).Where(w => w.Text.Any(IsWide)).ToList();
+
+            var result = new List<List<WordBox>>();
+            var enKept = new List<WordBox>();
+            foreach (var l in enLines)
+            {
+                var keep = l.Where(w => !string.IsNullOrEmpty(w.Text) &&
+                                        !cjkWords.Any(c => OverlapRatio(w, c) > 0.3)).ToList();
+                if (keep.Count == 0) continue;
+                enKept.AddRange(keep);
+                result.Add(keep);
+            }
+
+            foreach (var l in ja)
+            {
+                var keep = l.Where(w => w.Text.Any(IsWide) ||
+                                        !enKept.Any(e => OverlapRatio(w, e) > 0.3)).ToList();
+                if (keep.Count > 0) result.Add(keep);
+            }
+            return result;
+        }
+
+        /// <summary>Tỉ lệ diện tích của <paramref name="a"/> bị <paramref name="b"/> che.</summary>
+        private static double OverlapRatio(WordBox a, WordBox b)
+        {
+            double w = Math.Min(a.R, b.R) - Math.Max(a.X, b.X);
+            double h = Math.Min(a.B, b.B) - Math.Max(a.Y, b.Y);
+            if (w <= 0 || h <= 0) return 0;
+            double area = Math.Max(1e-6, a.Width * a.Height);
+            return w * h / area;
+        }
+
+        // ---------- Ghép text của nhiều ảnh chụp cuộn ----------
+
+        /// <summary>
+        /// Nối text của nhiều ảnh chụp liên tiếp (cuộn trang), bỏ các dòng bị trùng ở chỗ nối:
+        /// tìm k lớn nhất sao cho k dòng cuối của phần trước = k dòng đầu của ảnh sau
+        /// (so sánh bỏ khoảng trắng). Phần trùng phải có ít nhất 1 dòng "có nội dung"
+        /// để tránh ghép nhầm các dòng chỉ có "}".
+        /// </summary>
+        public static string Stitch(IEnumerable<string> texts)
+        {
+            var result = new List<string>();
+            foreach (var t in texts)
+            {
+                if (string.IsNullOrEmpty(t)) continue;
+                var lines = t.Replace("\r\n", "\n").Split('\n').ToList();
+                int k = FindOverlap(result, lines);
+                result.AddRange(lines.Skip(k));
+            }
+            return string.Join("\r\n", result);
+        }
+
+        private static int FindOverlap(List<string> a, List<string> b)
+        {
+            for (int k = Math.Min(a.Count, b.Count); k >= 1; k--)
+            {
+                bool same = true, meaningful = false;
+                for (int i = 0; i < k && same; i++)
+                {
+                    var x = StitchKey(a[a.Count - k + i]);
+                    same = x == StitchKey(b[i]);
+                    if (x.Length >= 4) meaningful = true;
+                }
+                if (same && meaningful) return k;
+            }
+            return 0;
+        }
+
+        private static string StitchKey(string line) =>
+            new string(line.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
         /// <summary>Ký tự rộng (CJK, kana, full-width).</summary>
-        private static bool IsWide(char c) =>
+        internal static bool IsWide(char c) =>
             (c >= 0x1100 && c <= 0x115F) || (c >= 0x2E80 && c <= 0xA4CF) ||
             (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0xF900 && c <= 0xFAFF) ||
             (c >= 0xFE30 && c <= 0xFE4F) || (c >= 0xFF00 && c <= 0xFF60) || (c >= 0xFFE0 && c <= 0xFFE6);
@@ -208,6 +296,13 @@ namespace ScreenOcr
                 else sb.Append(c);
             }
             return sb.ToString();
+        }
+
+        private static double LowerMedian(List<double> v)
+        {
+            if (v.Count == 0) return 0;
+            v.Sort();
+            return v[(v.Count - 1) / 2];
         }
 
         private static double Median(List<double> v)

@@ -20,12 +20,27 @@ namespace ScreenOcr
     {
         private readonly Dictionary<string, OcrEngine> _engines = new Dictionary<string, OcrEngine>();
 
-        /// <summary>Các ngôn ngữ OCR đã cài trên máy: (tag, tên hiển thị).</summary>
+        /// <summary>Tag đặc biệt: chạy cả engine tiếng Anh và tiếng Nhật rồi ghép kết quả.</summary>
+        public const string HybridTag = "hybrid";
+
+        /// <summary>Các ngôn ngữ OCR đã cài trên máy: (tag, tên hiển thị). Có thêm mục kết hợp en + ja nếu đủ gói.</summary>
         public static List<KeyValuePair<string, string>> GetLanguages()
         {
-            return OcrEngine.AvailableRecognizerLanguages
+            var list = OcrEngine.AvailableRecognizerLanguages
                 .Select(l => new KeyValuePair<string, string>(l.LanguageTag, l.DisplayName))
                 .ToList();
+            if (TryGetHybridTags(out _, out _))
+                list.Insert(0, new KeyValuePair<string, string>(HybridTag, "English + 日本語"));
+            return list;
+        }
+
+        private static bool TryGetHybridTags(out string en, out string ja)
+        {
+            var tags = OcrEngine.AvailableRecognizerLanguages.Select(l => l.LanguageTag).ToList();
+            en = tags.FirstOrDefault(t => t.Equals("en-US", StringComparison.OrdinalIgnoreCase))
+                 ?? tags.FirstOrDefault(t => t.StartsWith("en", StringComparison.OrdinalIgnoreCase));
+            ja = tags.FirstOrDefault(t => t.StartsWith("ja", StringComparison.OrdinalIgnoreCase));
+            return en != null && ja != null;
         }
 
         private OcrEngine GetEngine(string tag)
@@ -42,7 +57,12 @@ namespace ScreenOcr
 
         public async Task<string> RecognizeAsync(Bitmap source, AppSettings opt)
         {
-            var engine = GetEngine(opt.LanguageTag);
+            bool hybrid = opt.LanguageTag == HybridTag;
+            string enTag = null, jaTag = null;
+            if (hybrid && !TryGetHybridTags(out enTag, out jaTag))
+                throw new InvalidOperationException(
+                    "Chế độ English + 日本語 cần cài cả gói OCR tiếng Anh (en-US) và tiếng Nhật (ja-JP).");
+            var engine = hybrid ? null : GetEngine(opt.LanguageTag);
 
             double scale;
             using (var prepared = Preprocess(source, opt, out scale))
@@ -50,10 +70,14 @@ namespace ScreenOcr
                 var sbmp = await ToSoftwareBitmapAsync(prepared);
                 try
                 {
-                    var result = await engine.RecognizeAsync(sbmp);
-                    var lines = result.Lines.Select(l => l.Words.Select(w =>
-                        new WordBox(w.Text, w.BoundingRect.X, w.BoundingRect.Y,
-                                    w.BoundingRect.Width, w.BoundingRect.Height)));
+                    List<List<WordBox>> lines;
+                    if (hybrid)
+                    {
+                        var en = await RecognizeWordsAsync(GetEngine(enTag), sbmp);
+                        var ja = await RecognizeWordsAsync(GetEngine(jaTag), sbmp);
+                        lines = TextLayout.MergeHybrid(en, ja);
+                    }
+                    else lines = await RecognizeWordsAsync(engine, sbmp);
                     return TextLayout.Build(lines, opt);
                 }
                 finally
@@ -61,6 +85,14 @@ namespace ScreenOcr
                     sbmp.Dispose();
                 }
             }
+        }
+
+        private static async Task<List<List<WordBox>>> RecognizeWordsAsync(OcrEngine engine, SoftwareBitmap sbmp)
+        {
+            var result = await engine.RecognizeAsync(sbmp);
+            return result.Lines.Select(l => l.Words.Select(w =>
+                new WordBox(w.Text, w.BoundingRect.X, w.BoundingRect.Y,
+                            w.BoundingRect.Width, w.BoundingRect.Height)).ToList()).ToList();
         }
 
         // ---------- Tiền xử lý ảnh ----------
