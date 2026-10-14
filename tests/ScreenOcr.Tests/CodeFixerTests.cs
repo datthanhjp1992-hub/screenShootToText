@@ -146,6 +146,66 @@ namespace ScreenOcr.Tests
             Assert.Equal(input, CodeFixer.Fix(input));
         }
 
+        [Theory]
+        [InlineData("x = Foo.DOCUMENT_TYPE_10@;", "x = Foo.DOCUMENT_TYPE_100;")]   // số 0 có chấm -> "@"
+        [InlineData("x = Foo.DOCUMENT_TYPE_1@1;", "x = Foo.DOCUMENT_TYPE_101;")]
+        [InlineData("int a = 1@;", "int a = 10;")]
+        [InlineData("@Override", "@Override")]
+        [InlineData("getFileName( )", "getFileName()")]
+        [InlineData("if ( a ) {", "if ( a ) {")]                                   // style "( a )" giữ nguyên
+        public void FixesTesseractSymbols(string input, string expected)
+        {
+            Assert.Equal(expected, CodeFixer.FixLine(input));
+        }
+
+        [Theory]
+        [InlineData("    /f 対面パターン", "    // 対面パターン")]
+        [InlineData("    {f/f StHN--", "    // StHN--")]
+        [InlineData("    Jf TREND", "    // TREND")]
+        [InlineData("ff = foo();", "ff = foo();")]                                 // biến tên ff: giữ nguyên
+        [InlineData("} else aif ( x ) {", "} else if ( x ) {")]
+        [InlineData("if ( x ) £", "if ( x ) {")]
+        [InlineData("t", "}")]
+        [InlineData("    t", "    }")]
+        public void FixesTesseractNoise(string input, string expected)
+        {
+            Assert.Equal(expected, CodeFixer.Fix(input));
+        }
+
+        [Fact]
+        public void JoinsIdentifierSplitByTesseract()
+        {
+            var input = "buff.add(\"1\");\r\nbuf f.add(\"2\");\r\nint a = b;";
+            Assert.Equal("buff.add(\"1\");\r\nbuff.add(\"2\");\r\nint a = b;", CodeFixer.Fix(input));
+        }
+
+        /// <summary>Kết quả Tesseract thật (ảnh Eclipse font nhỏ người dùng gửi) -> sau khi sửa.</summary>
+        [Fact]
+        public void RealWorldTesseractSample()
+        {
+            var input = string.Join("\r\n",
+                "if ( DMFCOutputDocument.DOCUMENT_TYPE_103.equals(parameter.getDocumentType()) ) {",
+                "    buff.add(\"1\");",
+                "} else aif ( DMFCOutputDocument .DOCUMENT_TYPE_10@.equals(parameter.getDocumentType()) ) {",
+                "    // FBR.",
+                "    buf f.add(\"2\");",
+                "} else if ( DMFCOutputDocument .DOCUMENT_TYPE_1@2.equals(parameter.getDocumentType()) ) £",
+                "    {f/f StHN--",
+                "    buf f.add(\"4\");",
+                "}");
+            var expected = string.Join("\r\n",
+                "if ( DMFCOutputDocument.DOCUMENT_TYPE_103.equals(parameter.getDocumentType()) ) {",
+                "    buff.add(\"1\");",
+                "} else if ( DMFCOutputDocument.DOCUMENT_TYPE_100.equals(parameter.getDocumentType()) ) {",
+                "    // FBR.",
+                "    buff.add(\"2\");",
+                "} else if ( DMFCOutputDocument.DOCUMENT_TYPE_102.equals(parameter.getDocumentType()) ) {",
+                "    // StHN--",
+                "    buff.add(\"4\");",
+                "}");
+            Assert.Equal(expected, CodeFixer.Fix(input));
+        }
+
         /// <summary>Kết quả OCR thật (ảnh Eclipse người dùng gửi) -> sau khi sửa.</summary>
         [Fact]
         public void RealWorldEclipseSample()

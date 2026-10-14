@@ -1,6 +1,8 @@
 # ScreenOcr — Chụp màn hình → Text (offline)
 
-App portable, rất nhẹ (~1 MB), dùng engine OCR có sẵn của Windows 10/11 (`Windows.Media.Ocr`).
+App portable (~20 MB), chạy hoàn toàn offline. Dùng 2 engine OCR:
+**Tesseract 5** để đọc code (ký hiệu `{ } ( ) ; " _` chính xác) và engine có sẵn của Windows 10/11
+(`Windows.Media.Ocr`) để đọc chữ Nhật trong comment.
 Tối ưu cho việc chụp **code trong Eclipse**: giữ thụt lề, bỏ số dòng, giữ dòng trống, hỗ trợ comment tiếng Nhật.
 
 ## 0. Tải bản build sẵn (không cần cài gì)
@@ -21,11 +23,14 @@ Tạo bản phát hành mới: push một tag dạng `v1.0.1`, GitHub Actions s�
 - **Cách 1 – Visual Studio:** mở `ScreenOcr.csproj` → chọn `Release` → Build (Ctrl+Shift+B).
 - **Cách 2 – Dòng lệnh:** chạy `build.bat` (hoặc `dotnet build -c Release`).
 
-Kết quả nằm ở `bin\Release\net48\`. **Copy cả thư mục này** sang máy khác là chạy được
-(.NET Framework 4.8 đã có sẵn trên Windows 10/11, không cần cài gì thêm).
+Kết quả nằm ở `bin\Release\net48\`. **Copy cả thư mục này** (gồm `x64\` và `tessdata\`) sang máy khác là chạy được
+(.NET Framework 4.8 đã có sẵn trên Windows 10/11 64-bit).
 
-> Lần build đầu cần internet để NuGet tải 2 package: `Microsoft.Windows.SDK.Contracts`
-> (để gọi Windows OCR) và `Microsoft.NETFramework.ReferenceAssemblies`. App chạy thì hoàn toàn offline.
+> Lần build đầu cần internet: NuGet tải package (`Tesseract`, `Microsoft.Windows.SDK.Contracts`, ...) và
+> build tự tải `tessdata\eng.traineddata` (~4 MB, tessdata_fast). App chạy thì hoàn toàn offline.
+>
+> Tesseract cần Visual C++ runtime 2015–2022 (x64). Bản zip trên Releases đã kèm sẵn các dll này trong `x64\`;
+> nếu tự build và máy báo lỗi khởi động Tesseract thì cài *Microsoft Visual C++ Redistributable (x64)*.
 
 ## 2. Gói ngôn ngữ OCR
 
@@ -65,9 +70,11 @@ Cài đặt được lưu vào `ScreenOcr.ini` cạnh file exe (nếu thư mục
 
 ## 4. Mẹo để OCR code Eclipse chính xác hơn
 
-- **Ngôn ngữ:** code có comment tiếng Nhật → chọn `English + 日本語 (hybrid)` (cần cài cả 2 gói OCR):
-  app chạy cả 2 engine rồi ghép lại — chữ Nhật lấy từ engine `ja`, code/ký hiệu `{ } ; ( )` lấy từ engine `en`.
-  Code thuần tiếng Anh → `English (en-US)` (nhanh hơn).
+- **Chế độ OCR** (ô *Ngôn ngữ*):
+  - `Code + 日本語 [Tesseract]` (mặc định, chính xác nhất): Tesseract đọc code, Windows OCR `ja` đọc chữ Nhật
+    trong comment. Cần cài gói OCR tiếng Nhật của Windows.
+  - `Code [Tesseract]`: code thuần tiếng Anh.
+  - Các chế độ `[Windows]`: chỉ dùng Windows OCR (nhanh, nhưng hay mất ký hiệu `() { } ;` khi đọc code).
 - **Phóng to font Eclipse** (Ctrl + `=`) trước khi chụp; chữ càng to OCR càng chuẩn. Tuỳ chọn *Tự phóng to* (bật sẵn)
   sẽ đo cỡ chữ sau lần OCR đầu, nếu chữ còn nhỏ thì phóng to thêm (tối đa ×6) và OCR lại.
 - **Tắt "Show Whitespace Characters"** của Eclipse (nút ¶ trên thanh công cụ) khi chụp: các ký hiệu `^ » ↵` làm OCR mất dấu `;` `)`.
@@ -89,8 +96,9 @@ Cài đặt được lưu vào `ScreenOcr.ini` cạnh file exe (nếu thư mục
 | `Program.cs` | Điểm vào, chống chạy 2 instance |
 | `MainForm.cs` | Giao diện, khay hệ thống, hotkey, nhập/xuất |
 | `RegionSelectForm.cs` | Màn hình chọn vùng (hỗ trợ nhiều màn hình, DPI 125%/150%) |
-| `OcrService.cs` | Tiền xử lý ảnh + gọi Windows OCR |
-| `TextLayout.cs` | Dựng lại text dạng code từ toạ độ chữ (thụt lề, dòng trống, số dòng), ghép en + ja, ghép ảnh cuộn |
+| `OcrService.cs` | Tiền xử lý ảnh, chọn engine (Tesseract / Windows OCR), tự phóng to |
+| `TesseractOcr.cs` | Gọi Tesseract, lấy từ + khung bao + độ tin cậy |
+| `TextLayout.cs` | Dựng lại text dạng code từ toạ độ chữ (thụt lề, dòng trống, số dòng), ghép Tesseract + ja, ghép ảnh cuộn |
 | `CodeFixer.cs` | Sửa lỗi OCR hay gặp với code bằng quy tắc |
 | `AppSettings.cs` | Đọc/ghi `ScreenOcr.ini` |
 | `NativeMethods.cs` | Win32 `RegisterHotKey`, parse hotkey |

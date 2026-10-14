@@ -12,7 +12,7 @@ namespace ScreenOcr
     /// </summary>
     public sealed class AppSettings
     {
-        public string LanguageTag = "hybrid";    // "hybrid" = kết hợp en + ja (nếu máy chỉ có 1 gói thì dùng gói đó)
+        public string LanguageTag = "tesseract+ja"; // Tesseract đọc code + Windows OCR đọc chữ Nhật (không có thì lấy chế độ tốt nhất còn lại)
         public int Scale = 2;                    // phóng to ảnh trước khi OCR
         public bool AutoScale = true;            // chữ còn nhỏ thì tự phóng to thêm và OCR lại
         public bool CleanBackground = true;      // bỏ nền highlight + ký hiệu khoảng trắng mờ, tăng tương phản

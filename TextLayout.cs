@@ -11,6 +11,8 @@ namespace ScreenOcr
     {
         public string Text;
         public double X, Y, Width, Height;
+        /// <summary>Độ tin cậy 0–100 (Tesseract). -1 = engine không cung cấp (Windows OCR).</summary>
+        public double Confidence = -1;
         public double R => X + Width;
         public double B => Y + Height;
 
@@ -236,6 +238,46 @@ namespace ScreenOcr
                 if (keep.Count > 0) result.Add(keep);
             }
             return result;
+        }
+
+        // ---------- Tesseract (code) + Windows OCR ja (chữ Nhật) ----------
+
+        private static readonly Regex CodeLike = new Regex(@"[.(_""\[=;]", RegexOptions.Compiled);
+
+        /// <summary>
+        /// Ghép kết quả Tesseract (đọc code tốt) với Windows OCR tiếng Nhật (đọc chữ Nhật tốt):
+        ///  - chữ Nhật (CJK/kana) lấy từ ja, TRỪ khi vùng đó Tesseract đọc ra code chắc chắn
+        ///    (engine ja hay "bịa" ra chữ Nhật trên code in nghiêng, VD: DOCUMENT_TYPE_103 -> DOCu胸EIV…)
+        ///  - phần còn lại lấy từ Tesseract, bỏ các từ rác Tesseract đọc đè lên chữ Nhật
+        /// </summary>
+        public static List<List<WordBox>> MergeCodeWithJapanese(
+            IEnumerable<IEnumerable<WordBox>> codeLines, IEnumerable<IEnumerable<WordBox>> jaLines)
+        {
+            var code = codeLines.Select(l => l.Where(w => !string.IsNullOrEmpty(w.Text)).ToList()).ToList();
+            var trusted = code.SelectMany(l => l).Where(IsTrustedCode).ToList();
+
+            var cjk = jaLines
+                .Select(l => l.Where(w => !string.IsNullOrEmpty(w.Text) && w.Text.Any(IsWide) &&
+                                          !trusted.Any(t => OverlapRatio(w, t) > 0.3)).ToList())
+                .Where(l => l.Count > 0).ToList();
+            var cjkWords = cjk.SelectMany(l => l).ToList();
+
+            var result = new List<List<WordBox>>();
+            foreach (var l in code)
+            {
+                var keep = l.Where(w => !cjkWords.Any(c => OverlapRatio(w, c) > 0.3)).ToList();
+                if (keep.Count > 0) result.Add(keep);
+            }
+            result.AddRange(cjk);
+            return result;
+        }
+
+        /// <summary>Từ Tesseract đọc ra chắc chắn là code (không phải rác đè lên chữ Nhật).</summary>
+        private static bool IsTrustedCode(WordBox w)
+        {
+            if (w.Text.Any(c => c > 0x7F)) return false;
+            if (w.Confidence >= 60) return true;
+            return w.Confidence >= 30 && w.Text.Length >= 6 && CodeLike.IsMatch(w.Text);
         }
 
         /// <summary>Tỉ lệ diện tích của <paramref name="a"/> bị <paramref name="b"/> che.</summary>
