@@ -170,6 +170,52 @@ namespace ScreenOcr.Tests
             Assert.Equal("foo();\r\nbar();", text);
         }
 
+        // ---------- MergeCodeWithJapanese (Tesseract + Windows ja) ----------
+
+        private static WordBox W(string t, double x, double y, double w, double conf = -1) =>
+            new WordBox(t, x, y, w, 20) { Confidence = conf };
+
+        [Fact]
+        public void TesseractJaReplacesGarbageInJapaneseComment()
+        {
+            // Dòng: // 対面パターン  — Tesseract đọc ra rác (độ tin cậy thấp), ja đọc đúng
+            var code = new List<List<WordBox>> { new List<WordBox> { W("//", 0, 0, 20, 74), W("stdniy2-", 30, 0, 70, 0) } };
+            var ja = new List<List<WordBox>>
+            {
+                new List<WordBox> { W("//", 0, 0, 20), W("対", 30, 0, 20), W("面", 50, 0, 20), W("パターン", 70, 0, 40) },
+            };
+            var text = TextLayout.Build(TextLayout.MergeCodeWithJapanese(code, ja), Opt());
+            Assert.Equal("// 対面パターン", text);
+        }
+
+        [Fact]
+        public void TesseractJaIgnoresJapaneseHallucinatedOverCode()
+        {
+            // engine ja "bịa" chữ Nhật trên hằng số in nghiêng; Tesseract đọc đúng (độ tin cậy 45 nhưng rõ là code)
+            var code = new List<List<WordBox>>
+            {
+                new List<WordBox> { W("if", 0, 0, 20, 90), W(".DOCUMENT_TYPE_103.equals(x)", 30, 0, 280, 45) },
+            };
+            var ja = new List<List<WordBox>>
+            {
+                new List<WordBox> { W("if", 0, 0, 20), W("DOCu胸EIVアーア", 30, 0, 150) },
+            };
+            var text = TextLayout.Build(TextLayout.MergeCodeWithJapanese(code, ja), Opt());
+            Assert.Equal("if .DOCUMENT_TYPE_103.equals(x)", text);
+        }
+
+        [Fact]
+        public void TesseractJaKeepsCodeBeforeTrailingJapaneseComment()
+        {
+            var code = new List<List<WordBox>>
+            {
+                new List<WordBox> { W("x();", 0, 0, 40, 92), W("//", 50, 0, 20, 80), W("FARR", 80, 0, 40, 10) },
+            };
+            var ja = new List<List<WordBox>> { new List<WordBox> { W("x0;", 0, 0, 40), W("初期化", 80, 0, 60) } };
+            var text = TextLayout.Build(TextLayout.MergeCodeWithJapanese(code, ja), Opt());
+            Assert.Equal("x(); // 初期化", text);
+        }
+
         // ---------- Stitch ----------
 
         [Fact]

@@ -44,7 +44,15 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item README.md bin/Release/net48/ -Force
+          $out = "bin/Release/net48"
+          # App chạy 64-bit: bỏ bản native x86 của Tesseract cho nhẹ
+          Remove-Item "$out/x86" -Recurse -Force -ErrorAction SilentlyContinue
+          # Tesseract cần Visual C++ runtime: copy kèm (app-local) để máy chưa cài VC++ Redistributable vẫn chạy
+          foreach ($dll in "msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll") {
+            Copy-Item "$env:WINDIR/System32/$dll" "$out/x64/" -Force
+          }
+          if (-not (Test-Path "$out/tessdata/eng.traineddata")) { throw "Thiếu tessdata/eng.traineddata" }
+          Copy-Item README.md $out/ -Force
           Compress-Archive -Path "bin/Release/net48/*" -DestinationPath "dist/ScreenOcr-${{ steps.ver.outputs.version }}.zip" -Force
           Get-ChildItem bin/Release/net48
 

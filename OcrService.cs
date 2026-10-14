@@ -14,24 +14,42 @@ using WinLanguage = Windows.Globalization.Language;
 namespace ScreenOcr
 {
     /// <summary>
-    /// OCR offline bằng engine có sẵn của Windows 10/11 (Windows.Media.Ocr).
+    /// OCR offline: Tesseract (đọc code) và/hoặc engine có sẵn của Windows 10/11 (Windows.Media.Ocr).
     /// </summary>
     public sealed class OcrService
     {
         private readonly Dictionary<string, OcrEngine> _engines = new Dictionary<string, OcrEngine>();
+        private readonly TesseractOcr _tesseract = new TesseractOcr();
 
-        /// <summary>Tag đặc biệt: chạy cả engine tiếng Anh và tiếng Nhật rồi ghép kết quả.</summary>
+        /// <summary>Tag đặc biệt: chạy cả engine tiếng Anh và tiếng Nhật của Windows rồi ghép kết quả.</summary>
         public const string HybridTag = "hybrid";
+        /// <summary>Tesseract đọc code + Windows OCR tiếng Nhật đọc comment (chính xác nhất).</summary>
+        public const string TesseractJaTag = "tesseract+ja";
+        /// <summary>Chỉ Tesseract (code thuần tiếng Anh).</summary>
+        public const string TesseractTag = "tesseract";
 
-        /// <summary>Các ngôn ngữ OCR đã cài trên máy: (tag, tên hiển thị). Có thêm mục kết hợp en + ja nếu đủ gói.</summary>
+        /// <summary>Các chế độ OCR dùng được trên máy: (tag, tên hiển thị), chế độ tốt nhất đứng đầu.</summary>
         public static List<KeyValuePair<string, string>> GetLanguages()
         {
-            var list = OcrEngine.AvailableRecognizerLanguages
-                .Select(l => new KeyValuePair<string, string>(l.LanguageTag, l.DisplayName))
-                .ToList();
+            var list = new List<KeyValuePair<string, string>>();
+            bool hasJa = TryGetJaTag(out _);
+            if (TesseractOcr.IsAvailable)
+            {
+                if (hasJa) list.Add(new KeyValuePair<string, string>(TesseractJaTag, "Code + 日本語 [Tesseract]"));
+                list.Add(new KeyValuePair<string, string>(TesseractTag, "Code [Tesseract]"));
+            }
             if (TryGetHybridTags(out _, out _))
-                list.Insert(0, new KeyValuePair<string, string>(HybridTag, "English + 日本語"));
+                list.Add(new KeyValuePair<string, string>(HybridTag, "English + 日本語 [Windows]"));
+            list.AddRange(OcrEngine.AvailableRecognizerLanguages
+                .Select(l => new KeyValuePair<string, string>(l.LanguageTag, l.DisplayName + " [Windows]")));
             return list;
+        }
+
+        private static bool TryGetJaTag(out string ja)
+        {
+            ja = OcrEngine.AvailableRecognizerLanguages.Select(l => l.LanguageTag)
+                .FirstOrDefault(t => t.StartsWith("ja", StringComparison.OrdinalIgnoreCase));
+            return ja != null;
         }
 
         private static bool TryGetHybridTags(out string en, out string ja)
@@ -57,18 +75,7 @@ namespace ScreenOcr
 
         public async Task<string> RecognizeAsync(Bitmap source, AppSettings opt)
         {
-            bool hybrid = opt.LanguageTag == HybridTag;
-            string enTag = null, jaTag = null;
-            if (hybrid && !TryGetHybridTags(out enTag, out jaTag))
-                throw new InvalidOperationException(
-                    "Chế độ English + 日本語 cần cài cả gói OCR tiếng Anh (en-US) và tiếng Nhật (ja-JP).");
-            Func<SoftwareBitmap, Task<List<List<WordBox>>>> recognize = async sbmp =>
-            {
-                if (!hybrid) return await RecognizeWordsAsync(GetEngine(opt.LanguageTag), sbmp);
-                var en = await RecognizeWordsAsync(GetEngine(enTag), sbmp);
-                var ja = await RecognizeWordsAsync(GetEngine(jaTag), sbmp);
-                return TextLayout.MergeHybrid(en, ja);
-            };
+            var recognize = CreateRecognizer(opt.LanguageTag);
 
             double scale = Math.Max(1, opt.Scale);
             var lines = await RecognizeAtScaleAsync(source, opt, scale, recognize);
@@ -89,27 +96,71 @@ namespace ScreenOcr
             return TextLayout.Build(lines, opt);
         }
 
-        /// <summary>Chiều cao dòng (px, sau khi phóng to) mà Windows OCR đọc tốt nhất.</summary>
+        /// <summary>Chọn engine theo chế độ: nhận ảnh PNG đã tiền xử lý, trả về các dòng từ.</summary>
+        private Func<byte[], Task<List<List<WordBox>>>> CreateRecognizer(string tag)
+        {
+            if (tag == TesseractTag || tag == TesseractJaTag)
+            {
+                if (!TesseractOcr.IsAvailable)
+                    throw new InvalidOperationException(
+                        $"Không tìm thấy {Path.Combine(TesseractOcr.DataDir, "eng.traineddata")}. Hãy copy đủ cả thư mục app.");
+                string jaTag = null;
+                if (tag == TesseractJaTag && !TryGetJaTag(out jaTag))
+                    throw new InvalidOperationException("Chế độ Code + 日本語 cần cài gói OCR tiếng Nhật (ja-JP) của Windows.");
+
+                return async png =>
+                {
+                    // Tesseract chạy đồng bộ, tốn CPU -> đưa ra thread nền để UI không bị treo
+                    var code = await Task.Run(() => _tesseract.Recognize(png));
+                    if (jaTag == null) return code;
+                    var ja = await WindowsWordsAsync(GetEngine(jaTag), png);
+                    return TextLayout.MergeCodeWithJapanese(code, ja);
+                };
+            }
+
+            if (tag == HybridTag)
+            {
+                if (!TryGetHybridTags(out var enTag, out var jaTag))
+                    throw new InvalidOperationException(
+                        "Chế độ English + 日本語 cần cài cả gói OCR tiếng Anh (en-US) và tiếng Nhật (ja-JP).");
+                return async png =>
+                {
+                    var en = await WindowsWordsAsync(GetEngine(enTag), png);
+                    var ja = await WindowsWordsAsync(GetEngine(jaTag), png);
+                    return TextLayout.MergeHybrid(en, ja);
+                };
+            }
+
+            var engine = GetEngine(tag);
+            return png => WindowsWordsAsync(engine, png);
+        }
+
+        /// <summary>Chiều cao dòng (px, sau khi phóng to) mà OCR đọc tốt nhất.</summary>
         private const double TargetLineHeight = 40;
         private const double MaxAutoScale = 6;
 
         private static async Task<List<List<WordBox>>> RecognizeAtScaleAsync(
-            Bitmap source, AppSettings opt, double scale, Func<SoftwareBitmap, Task<List<List<WordBox>>>> recognize)
+            Bitmap source, AppSettings opt, double scale, Func<byte[], Task<List<List<WordBox>>>> recognize)
         {
+            byte[] png;
             using (var prepared = Preprocess(source, opt, scale))
+            using (var ms = new MemoryStream())
             {
-                var sbmp = await ToSoftwareBitmapAsync(prepared);
-                try { return await recognize(sbmp); }
-                finally { sbmp.Dispose(); }
+                prepared.Save(ms, ImageFormat.Png);
+                png = ms.ToArray();
             }
+            return await recognize(png);
         }
 
-        private static async Task<List<List<WordBox>>> RecognizeWordsAsync(OcrEngine engine, SoftwareBitmap sbmp)
+        private static async Task<List<List<WordBox>>> WindowsWordsAsync(OcrEngine engine, byte[] png)
         {
-            var result = await engine.RecognizeAsync(sbmp);
-            return result.Lines.Select(l => l.Words.Select(w =>
-                new WordBox(w.Text, w.BoundingRect.X, w.BoundingRect.Y,
-                            w.BoundingRect.Width, w.BoundingRect.Height)).ToList()).ToList();
+            using (var sbmp = await ToSoftwareBitmapAsync(png))
+            {
+                var result = await engine.RecognizeAsync(sbmp);
+                return result.Lines.Select(l => l.Words.Select(w =>
+                    new WordBox(w.Text, w.BoundingRect.X, w.BoundingRect.Y,
+                                w.BoundingRect.Width, w.BoundingRect.Height)).ToList()).ToList();
+            }
         }
 
         // ---------- Tiền xử lý ảnh ----------
@@ -201,12 +252,10 @@ namespace ScreenOcr
             finally { bmp.UnlockBits(data); }
         }
 
-        private static async Task<SoftwareBitmap> ToSoftwareBitmapAsync(Bitmap bmp)
+        private static async Task<SoftwareBitmap> ToSoftwareBitmapAsync(byte[] png)
         {
-            using (var ms = new MemoryStream())
+            using (var ms = new MemoryStream(png))
             {
-                bmp.Save(ms, ImageFormat.Png);
-                ms.Position = 0;
                 var decoder = await BitmapDecoder.CreateAsync(ms.AsRandomAccessStream());
                 return await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
             }

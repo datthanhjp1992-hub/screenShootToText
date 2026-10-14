@@ -15,7 +15,8 @@
     <Product>ScreenOcr</Product>
     <Description>Offline screen OCR (Windows.Media.Ocr)</Description>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <!-- Tesseract là thư viện native: build cố định 64-bit (Windows 11 chỉ có bản 64-bit) -->
+    <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
     <DebugType>none</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
@@ -28,6 +29,22 @@
     <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.22621.3233" />
     <!-- Cho phep build net48 ca tren may khong cai Targeting Pack -->
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- OCR offline đọc code chính xác hơn Windows OCR (kèm native dll trong x64\) -->
+    <PackageReference Include="Tesseract" Version="5.2.0" />
   </ItemGroup>
+
+  <!--
+    Dữ liệu ngôn ngữ Tesseract (tessdata_fast, ~4 MB): tự tải về tessdata\ khi build lần đầu
+    rồi copy ra cạnh exe. Muốn build offline thì tự đặt file vào tessdata\eng.traineddata.
+  -->
+  <PropertyGroup>
+    <TessdataUrl>https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/eng.traineddata</TessdataUrl>
+  </PropertyGroup>
+  <Target Name="DownloadTessdata" BeforeTargets="BeforeBuild" Condition="!Exists('$(MSBuildProjectDirectory)\tessdata\eng.traineddata')">
+    <DownloadFile SourceUrl="$(TessdataUrl)" DestinationFolder="$(MSBuildProjectDirectory)\tessdata" DestinationFileName="eng.traineddata" />
+  </Target>
+  <Target Name="CopyTessdata" AfterTargets="Build">
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\tessdata\eng.traineddata" DestinationFolder="$(OutDir)tessdata" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
